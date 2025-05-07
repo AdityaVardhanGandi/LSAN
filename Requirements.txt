@@ -1,0 +1,6 @@
+torch==2.0.0+cu118  # Ensure compatibility with CUDA
+torchvision==0.15.0+cu118  # For potential image-related tasks
+numpy==1.24.3
+argparse==1.4.0
+pandas==1.5.3  # Commonly used for data manipulation
+scikit-learn==1.2.2  # For metrics or additional utilities
