@@ -88,6 +88,7 @@ def build_hist(uirt): # NOTE: this UIRT extracted from only the training data
 
 
 def replace_id2idx(trn, vld, tst):
+
     
     def build_dict(category):
         category = list(set(category))
@@ -117,8 +118,12 @@ def replace_id2idx(trn, vld, tst):
 
 def load_raw_data(fn):
     print('Load ' + fn)
-    rawdata = [l for l in csv.reader(open(fn))]
+    rawdata = []
+    for l in csv.reader(open(fn)):
+        if len(l) >= 4:  # Only take rows with at least 4 columns
+            rawdata.append(l)
     return rawdata
+
 
 def find_negatives(dataset):
     NUMNEG = 100 # The number of negative items for evaluation
