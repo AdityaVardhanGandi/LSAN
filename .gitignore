@@ -1,0 +1,11 @@
+# IGNORE file
+
+__pycache__
+data/*
+!data/split_data.py
+!data/build_recdata.py
+!data/preprocess_yelp.py
+!data/preprocess_google.py
+.ipynb_checkpoints/
+results
+nohup.out
