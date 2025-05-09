@@ -2,6 +2,7 @@ import math
 import torch
 import numpy as np
 
+
 def HitRatio(ranklist):
     return bool(1 in ranklist)    
 
