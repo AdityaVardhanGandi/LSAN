@@ -15,19 +15,24 @@ def NDCG(ranklist):
         pos = pos_position[0]
         return math.log(2) / math.log(pos+2)         
 
+def Accuracy(ranklist):
+    # 1 if any positive in top-k, else 0 (for ranking tasks)
+    return int(1 in ranklist)
 
 def return_perf(predictions, foreach):       
     topks = [2,5,10,20]
     
     # Initialize metrics
-    hrs, ndcgs = {}, {}
+    hrs, ndcgs, accs = {}, {}, {}
     for tk in topks:
         if foreach == False:
             hrs[tk] = 0
             ndcgs[tk] = 0
+            accs[tk] = 0
         else:
             hrs[tk] = []
             ndcgs[tk] = []
+            accs[tk] = []
             
     
     for row in predictions:         
@@ -47,9 +52,11 @@ def return_perf(predictions, foreach):
             if foreach == False:
                 hrs[tk] += HitRatio(topk_labels)
                 ndcgs[tk] += NDCG(topk_labels)
+                accs[tk] += Accuracy(topk_labels)
             else:
                 hrs[tk].append(HitRatio(topk_labels))
                 ndcgs[tk].append(NDCG(topk_labels))
+                accs[tk].append(Accuracy(topk_labels))
                 
     
     numinst = predictions.shape[0]
@@ -58,8 +65,9 @@ def return_perf(predictions, foreach):
         for tk in topks:
             hrs[tk] /= numinst
             ndcgs[tk] /= numinst
+            accs[tk] /= numinst
         
-    return hrs, ndcgs
+    return hrs, ndcgs, accs
         
 def _cal_ranking_measures(loader, model, opt, mode, isperf, foreach=False):
     predictions = np.array([])
@@ -95,9 +103,9 @@ def _cal_ranking_measures(loader, model, opt, mode, isperf, foreach=False):
     if opt.model_name == 'peris':
         all_output = -1 * all_output # PERIS outputs scores (not distances)        
 
-    hrs, ndcgs = return_perf(all_output, foreach)    
+    hrs, ndcgs, accs = return_perf(all_output, foreach)    
     
-    return hrs, ndcgs
+    return hrs, ndcgs, accs
 
 def cal_measures(loader, model, opt, mode=None, isperf=False):
     model.eval()    

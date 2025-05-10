@@ -2,6 +2,7 @@ import os
 import time
 import torch
 import torch.nn as nn
+import torch.optim.lr_scheduler
 import numpy as np
 import argparse
 import random
@@ -31,10 +32,11 @@ class Instructor:
     def train(self):        
         newtime = round(time.time())        
         
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=self.opt.learning_rate)      
-               
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.model.parameters()), lr=self.opt.learning_rate) 
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
+     
         best_score = -1 
-        best_topHits, best_topNdcgs = None, None
+        best_topHits, best_topNdcgs, best_topAccs = None, None, None
         batch_loss = 0
         c = 0 # to check early stopping
         
@@ -57,17 +59,21 @@ class Instructor:
             evalt = time.time()
             
             with torch.no_grad():
-                topHits, topNdcgs  = cal_measures(self.vld_loader, self.model, opt, 'vld')                
+                topHits, topNdcgs, topAccs = cal_measures(self.vld_loader, self.model, opt, 'vld')                
+                validation_score = (topHits[10] + topNdcgs[10]) / 2
                 
-                if (topHits[10] + topNdcgs[10])/2 > best_score:
-                    best_score = (topHits[10] + topNdcgs[10])/2
+                scheduler.step(validation_score)
+                
+                if validation_score > best_score:
+                    best_score = validation_score
                     
                     best_topHits = topHits
                     best_topNdcgs = topNdcgs
+                    best_topAccs = topAccs
                     
                     c = 0
                     
-                    test_topHits, test_topNdcgs = cal_measures(
+                    test_topHits, test_topNdcgs, test_topAccs = cal_measures(
                                     self.tst_loader, self.model, opt, 'tst')
                     
                     if opt.save == True:          
@@ -82,7 +88,8 @@ class Instructor:
                     
                 evalt = time.time() - evalt 
             
-            print(('(%.1fs, %.1fs)\tEpoch [%d/%d], TRN_ERR : %.4f, v_score : %5.4f, tHR@10 : %5.4f'% (elapsed, evalt, epoch, self.opt.num_epoch, batch_loss/len(self.trn_loader), (topHits[10] + topNdcgs[10])/2,  test_topHits[10])))
+            print(('(%.1fs, %.1fs)\tEpoch [%d/%d], TRN_ERR : %.4f, v_score : %5.4f, tHR@10 : %5.4f, tAcc@10 : %5.4f'% 
+                (elapsed, evalt, epoch, self.opt.num_epoch, batch_loss/len(self.trn_loader), validation_score, test_topHits[10], test_topAccs[10])))
 
             batch_loss = 0
 
@@ -90,9 +97,10 @@ class Instructor:
             
             if c > 5: break # Early-stopping
         
-        print(('\nValid score@10 : %5.4f, HR@10 : %5.4f, NDCG@10 : %5.4f\n'% (((best_topHits[10] + best_topNdcgs[10])/2), best_topHits[10],  best_topNdcgs[10])))
+        print(('\nValid score@10 : %5.4f, HR@10 : %5.4f, NDCG@10 : %5.4f, ACC@10 : %5.4f\n'% 
+            (((best_topHits[10] + best_topNdcgs[10])/2), best_topHits[10],  best_topNdcgs[10], best_topAccs[10])))
         
-        return test_topHits,  test_topNdcgs, best_score, best_topHits[10], best_topNdcgs[10]
+        return test_topHits,  test_topNdcgs, test_topAccs, best_score, best_topHits[10], best_topNdcgs[10], best_topAccs[10]
             
     def _print_args(self):
         n_trainable_params, n_nontrainable_params = 0, 0
@@ -122,25 +130,30 @@ class Instructor:
         
         results = np.array(results)
         
-        best_vld_scores = results[:,2].mean()
-        best_vld_HR = results[:,3].mean()
-        best_vld_nDCG = results[:,4].mean()
-        print('\nBest VLD scores (mean): {:.4}\tHR@10:\t{:.4}\tnDCG@10:\t{:.4}\n'.format(best_vld_scores, best_vld_HR, best_vld_nDCG))
+        best_vld_scores = results[:,3].mean()
+        best_vld_HR = results[:,4].mean()
+        best_vld_nDCG = results[:,5].mean()
+        best_vld_ACC = results[:,6].mean()
+        print('\nBest VLD scores (mean): {:.4}\tHR@10:\t{:.4}\tnDCG@10:\t{:.4}\tACC@10:\t{:.4}\n'.format(best_vld_scores, best_vld_HR, best_vld_nDCG, best_vld_ACC))
         
         hrs_mean = np.array([list(i.values()) for i in results[:,0]]).mean(0)
         ndcg_mean = np.array([list(i.values()) for i in results[:,1]]).mean(0)
+        acc_mean = np.array([list(i.values()) for i in results[:,2]]).mean(0)
         
         hrs_std = np.array([list(i.values()) for i in results[:,0]]).std(0)
         ndcg_std = np.array([list(i.values()) for i in results[:,1]]).std(0)
+        acc_std = np.array([list(i.values()) for i in results[:,2]]).std(0)
         
         print('*TST STD\tTop2\tTop5\t\tTop10\t\tTop20\t')
         print('*HR means: {}'.format(', '.join(hrs_std.astype(str))))
-        print('*NDCG means: {}\n'.format(', '.join(ndcg_std.astype(str))))
+        print('*NDCG means: {}'.format(', '.join(ndcg_std.astype(str))))
+        print('*ACC means: {}\n'.format(', '.join(acc_std.astype(str))))
         
     
         print('*TST Performance\tTop2\tTop5\t\tTop10\t\tTop20\t')
         print('*HR means: {}'.format(', '.join(hrs_mean.astype(str))))
         print('*NDCG means: {}'.format(', '.join(ndcg_mean.astype(str))))
+        print('*ACC means: {}'.format(', '.join(acc_mean.astype(str))))
         
     def _reset_params(self):
         self.model = LSAN(self.opt).cuda()
@@ -161,14 +174,14 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', default=0, type=int)
     parser.add_argument('--num_epoch', default=50, type=int)
     parser.add_argument('--learning_rate', default=1e-2, type=float)    
-    parser.add_argument('--batch_size', default=128, type=int)    
+    parser.add_argument('--batch_size', default=256, type=int)    
     parser.add_argument('--save', default=False, type=str2bool)
-    parser.add_argument('--num_worker', default=4, type=int)    
+    parser.add_argument('--num_worker', default=8, type=int)    
 
     # HPs for general RS
     parser.add_argument('--margin', default=0.6, type=float)    
     parser.add_argument('--K', default=128, type=int)      
-    parser.add_argument('--numneg', default=5, type=int)
+    parser.add_argument('--numneg', default=10, type=int)
     parser.add_argument('--lamb', default=0.5, type=float) # Equation 7 and 8
     parser.add_argument('--mu', default=0.3, type=float)  # Equation 7 and 8
 
@@ -178,11 +191,11 @@ if __name__ == '__main__':
     parser.add_argument('--neg_weight', default=1.0, type=float)
     parser.add_argument('--bin_ratio', default=0.5, type=float)    
 
-    parser.add_argument('--warmup_epochs', default=5, type=int)
+    parser.add_argument('--warmup_epochs', default=20, type=int)
     parser.add_argument('--aggtype', default='max', type=str, help='sum, mean, max')
     parser.add_argument('--maxhist', default=100, type=int) # The maximum # of consumed items per user
-    parser.add_argument('--dropout', default=0.0, type=float) 
-    parser.add_argument('--num_layer', default=1, type=int) 
+    parser.add_argument('--dropout', default=0.3, type=float) 
+    parser.add_argument('--num_layer', default=2, type=int) 
     parser.add_argument('--num_next', default=1, type=int) 
     parser.add_argument('--kernel_size', default=5, type=int)  
 
